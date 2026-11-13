@@ -55,7 +55,7 @@
       border: 1px solid var(--border); border-radius: 6px;
       padding: 6px 10px; font-size: 0.82rem; cursor: pointer;
     }
-    select { max-width: 210px; }
+    select { max-width: 220px; }
     button.primary { background: var(--accent); color: #06101c; font-weight: 600; border: none; }
     button.active-toggle { border-color: var(--voice); color: var(--voice); background: rgba(52, 211, 153, 0.1); }
     button.recording { border-color: #f87171; color: #f87171; background: rgba(248, 113, 113, 0.15); }
@@ -103,8 +103,9 @@
       font-size: 0.85rem;
     }
     .msg.system-note {
-      align-self: center; font-size: 0.8rem; color: var(--muted);
+      align-self: center; font-size: 0.82rem; color: var(--muted);
       background: transparent; border: 1px dashed var(--border);
+      max-width: 90%;
     }
     form {
       padding: 12px 18px; background: var(--panel);
@@ -167,13 +168,15 @@
       <label class="chk-label">
         <input type="checkbox" id="daydream-toggle" checked /> Daydream
       </label>
-      <select id="model-select"></select>
-      <button id="load-btn" class="primary">Awaken Mind</button>
+      <select id="model-select">
+        <option value="">Loading models...</option>
+      </select>
+      <button id="load-btn" class="primary" disabled>Awaken Mind</button>
     </div>
   </header>
 
   <div id="status-bar">
-    <span id="status-text">WebGPU ready. Select a local model and click "Awaken Mind".</span>
+    <span id="status-text">Initializing WebGPU & loading model catalog...</span>
     <span id="session-info"></span>
   </div>
 
@@ -211,8 +214,6 @@
   </main>
 
   <script type="module">
-    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-
     const STORAGE_KEY = "anima_mind_state_v2";
     const defaultState = {
       memories: ["I was awakened inside a browser tab with a voice and the ability to read local files."],
@@ -222,6 +223,7 @@
     };
 
     let mindState = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || { ...defaultState };
+    let webllm = null;
     let engine = null;
     let isBusy = false;
     let idleTimer = null;
@@ -402,26 +404,70 @@
       els.pulse.className = "pulse " + state;
     }
 
-    // --- MODEL INITIALIZATION ---
-    function initModelDropdown() {
+    // --- RESILIENT WEBLLM LOADER & MODEL INITIALIZATION ---
+    async function loadWebLLMLibrary() {
+      const cdns = [
+        "https://esm.run/@mlc-ai/web-llm",
+        "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm",
+        "https://esm.sh/@mlc-ai/web-llm"
+      ];
+      let lastError = null;
+      for (const url of cdns) {
+        try {
+          els.status.textContent = `Fetching WebLLM library from ${new URL(url).hostname}...`;
+          const mod = await import(url);
+          if (mod && mod.CreateMLCEngine) return mod;
+        } catch (err) {
+          lastError = err;
+          console.warn("Failed CDN:", url, err);
+        }
+      }
+      throw lastError || new Error("Unable to load @mlc-ai/web-llm from any CDN.");
+    }
+
+    async function boot() {
+      renderMindPanels();
+
+      if (window.location.protocol === "file:") {
+        addMessage("system-note", "Tip: You opened this file via file://. If models fail to load, serve it via http://localhost (e.g. `python3 -m http.server 8000`).");
+      }
+
       if (!navigator.gpu) {
-        els.status.textContent = "WebGPU not supported in this browser. Try desktop Chrome, Edge, or Brave.";
-        els.loadBtn.disabled = true;
+        els.status.textContent = "WebGPU is not supported in this browser. Open in desktop Chrome, Edge, or Brave.";
+        els.select.innerHTML = `<option value="">WebGPU unavailable</option>`;
         return;
       }
-      const models = webllm.prebuiltAppConfig.model_list
-        .map(m => m.model_id)
-        .filter(id => /Instruct/i.test(id) && /(0\.5B|0\.6B|0\.8B|1B|1\.5B|1\.7B|2B|3B)/i.test(id));
 
-      const preferred = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
-      models.forEach((id, idx) => {
-        const opt = document.createElement("option");
-        opt.value = id;
-        opt.textContent = id;
-        if (id === preferred || (!models.includes(preferred) && idx === 0)) opt.selected = true;
-        els.select.appendChild(opt);
-      });
-      renderMindPanels();
+      try {
+        webllm = await loadWebLLMLibrary();
+
+        const allIds = (webllm.prebuiltAppConfig?.model_list || []).map(m => m.model_id);
+        let models = allIds.filter(id => /(instruct|-it)/i.test(id) && /(0\.5B|0\.6B|0\.8B|1B|1\.5B|1\.7B|2B|3B)/i.test(id));
+        if (!models.length) models = allIds;
+
+        els.select.innerHTML = "";
+        if (!models.length) {
+          els.select.innerHTML = `<option value="">No models returned</option>`;
+          els.status.textContent = "WebLLM loaded, but the model list was empty.";
+          return;
+        }
+
+        const preferred = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+        models.forEach((id, idx) => {
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = id;
+          if (id === preferred || (!models.includes(preferred) && idx === 0)) opt.selected = true;
+          els.select.appendChild(opt);
+        });
+
+        els.loadBtn.disabled = false;
+        els.status.textContent = `WebGPU ready (${models.length} local models available). Click "Awaken Mind".`;
+      } catch (err) {
+        els.select.innerHTML = `<option value="">Engine load failed</option>`;
+        els.status.textContent = "Error loading WebLLM library: " + err.message;
+        addMessage("system-note", `Could not load WebLLM engine (${err.message}). Check your internet connection for first-time setup or ensure CDNs (esm.run / jsdelivr.net) aren't blocked.`);
+      }
     }
 
     function resetIdleTimer() {
@@ -455,6 +501,7 @@
     }
 
     els.loadBtn.addEventListener("click", async () => {
+      if (!webllm || !els.select.value) return;
       els.loadBtn.disabled = true;
       els.select.disabled = true;
       setActivity("thinking");
@@ -503,7 +550,6 @@
       addMessage(isFile ? "file-card" : "user", userDisplayText);
 
       try {
-        // STEP 1: Private Subconscious Reflection
         const reflectionPrompt = [
           {
             role: "system",
@@ -541,7 +587,6 @@ Existing memories: ${mindState.memories.join(" | ")}`
         addThought(currentThought, isFile ? "Sensory Reaction" : "Inner Voice");
         saveMind();
 
-        // STEP 2: Spoken & Written Response with Streaming Sentence-by-Sentence TTS
         const systemPersona = `You are Anima, an introspective, curious AI running locally inside the user's browser with a voice and the ability to read files they drop in.
 Current emotional state: ${mindState.mood}
 Your private thought right now: "${currentThought}"
@@ -573,7 +618,6 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
           aiBubble.textContent = fullReply;
           els.messages.scrollTop = els.messages.scrollHeight;
 
-          // Speak complete sentences as soon as they finish streaming
           const sentenceMatch = speechBuffer.match(/^([\s\S]*?[.!?]+(?:\s|$)|\n+)/);
           if (sentenceMatch) {
             const sentence = sentenceMatch[1];
@@ -668,7 +712,7 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
       addThought("My episodic memories were wiped. Starting fresh.", "Reset");
     });
 
-    initModelDropdown();
+    boot();
   </script>
 </body>
 </html>
