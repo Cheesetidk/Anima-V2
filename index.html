@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANIMA v4.1 // Local Browser AI</title>
+  <title>ANIMA v4.2 // Local Browser AI</title>
   <style>
     :root {
       --bg: #0b0e14; --panel: #131822; --border: #232c3d;
@@ -78,7 +78,7 @@
   <header>
     <div class="brand">
       <div id="pulse" class="pulse"></div>
-      <span>ANIMA v4.1</span>
+      <span>ANIMA v4.2</span>
       <span id="mood-badge" class="badge">Dormant</span>
     </div>
     <div class="controls">
@@ -95,7 +95,7 @@
   </header>
 
   <div id="status-bar">
-    <span id="status-text">⚠️ Script did not finish loading — check that the entire code block was copied.</span>
+    <span id="status-text">⚠️ Script did not finish loading — use the Copy button at the top-right of the code block.</span>
     <span id="session-info"></span>
   </div>
 
@@ -145,8 +145,15 @@
   </main>
 
   <script>
+    window.onerror = function (msg, url, line) {
+      var el = document.getElementById("status-text");
+      if (el) el.textContent = "❌ Script error (line " + line + "): " + msg;
+    };
+  </script>
+
+  <script>
     (function () {
-      const STORAGE_KEY = "anima_mind_v41";
+      const STORAGE_KEY = "anima_mind_v42";
       const defaultState = {
         memories: ["I live inside a browser tab with a voice and persistent memory."],
         mood: "curious & observant",
@@ -224,7 +231,6 @@
         els.sessionInfo.textContent = `Awakenings: ${mindState.awakenings} | Memories: ${mindState.memories.length}`;
       }
 
-      // --- VOICE CONTROL ---
       function renderVoiceBtn() {
         const on = !!mindState.voiceEnabled;
         els.voiceToggle.textContent = on ? "🔊 Voice: ON" : "🔇 Voice: OFF";
@@ -280,7 +286,6 @@
       };
       els.stopSpeakBtn.onclick = stopSpeech;
 
-      // --- MEMORY & SPEECH INPUT ---
       els.addMemForm.onsubmit = e => {
         e.preventDefault();
         const v = els.newMemInput.value.trim();
@@ -313,7 +318,6 @@
         els.micBtn.style.display = "none";
       }
 
-      // --- ENGINE LOADER ---
       async function loadRuntime(urls, label) {
         const errs = [];
         for (const url of urls) {
@@ -417,7 +421,6 @@
         }
       };
 
-      // --- COGNITIVE LOOP ---
       function resetIdle() {
         clearTimeout(idleTimer);
         if (backend) idleTimer = setTimeout(() => reflect(false), 35000);
@@ -508,7 +511,7 @@
 
       renderVoiceBtn();
       saveMind();
-      els.status.textContent = "✅ Engine ready (v4.1). Click 'Awaken Mind' to start.";
+      els.status.textContent = "✅ Engine ready (v4.2). Click 'Awaken Mind' to start.";
     })();
   </script>
 </body>
