@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANIMA v4.2 // Local Browser AI</title>
+  <title>ANIMA v4.3 // Local Browser AI</title>
   <style>
     :root {
       --bg: #0b0e14; --panel: #131822; --border: #232c3d;
@@ -78,7 +78,7 @@
   <header>
     <div class="brand">
       <div id="pulse" class="pulse"></div>
-      <span>ANIMA v4.2</span>
+      <span>ANIMA v4.3</span>
       <span id="mood-badge" class="badge">Dormant</span>
     </div>
     <div class="controls">
@@ -95,7 +95,7 @@
   </header>
 
   <div id="status-bar">
-    <span id="status-text">⚠️ Script did not finish loading — use the Copy button at the top-right of the code block.</span>
+    <span id="status-text">⚠️ Script did not finish loading — check that the entire file was pasted.</span>
     <span id="session-info"></span>
   </div>
 
@@ -117,7 +117,7 @@
         <input type="file" id="file-input" hidden accept=".txt,.md,.js,.ts,.py,.html,.css,.json,.csv,.log" />
         <button type="button" id="attach-btn" title="Drop or pick a local text file" disabled>📎</button>
         <button type="button" id="mic-btn" title="Voice input" disabled>🎙️</button>
-        <input type="text" id="user-input" placeholder="Click 'Awaken Mind' above to start..." disabled autocomplete="off" />
+        <input type="text" id="user-input" placeholder="Click Awaken Mind above to start..." disabled autocomplete="off" />
         <button type="submit" id="send-btn" class="primary" disabled>Send</button>
       </form>
     </section>
@@ -153,8 +153,8 @@
 
   <script>
     (function () {
-      const STORAGE_KEY = "anima_mind_v42";
-      const defaultState = {
+      var STORAGE_KEY = "anima_mind_v43";
+      var defaultState = {
         memories: ["I live inside a browser tab with a voice and persistent memory."],
         mood: "curious & observant",
         voiceEnabled: true,
@@ -162,22 +162,22 @@
         awakenings: 0
       };
 
-      let mindState;
+      var mindState;
       try {
-        mindState = { ...defaultState, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") };
-      } catch (_) {
-        mindState = { ...defaultState };
+        mindState = Object.assign({}, defaultState, JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"));
+      } catch (e) {
+        mindState = Object.assign({}, defaultState);
       }
 
-      let backend = null;
-      let isBusy = false;
-      let idleTimer = null;
-      let chatHistory = [];
-      let voices = [];
-      let speechEpoch = 0;
+      var backend = null;
+      var isBusy = false;
+      var idleTimer = null;
+      var chatHistory = [];
+      var voices = [];
+      var speechEpoch = 0;
 
-      const $ = id => document.getElementById(id);
-      const els = {
+      function $(id) { return document.getElementById(id); }
+      var els = {
         select: $("model-select"), loadBtn: $("load-btn"), status: $("status-text"),
         sessionInfo: $("session-info"), loadingScreen: $("loading-screen"),
         loaderTitle: $("loader-title"), progressFill: $("progress-fill"),
@@ -190,23 +190,26 @@
         voiceToggle: $("voice-toggle"), stopSpeakBtn: $("stop-speak-btn"), voiceSelect: $("voice-select")
       };
 
-      function showLoader(show, { title, step, sub, pct, canClose = false } = {}) {
+      function showLoader(show, opts) {
+        opts = opts || {};
         els.loadingScreen.classList.toggle("visible", show);
         if (!show) return;
-        if (title) els.loaderTitle.textContent = title;
-        if (step) { els.loaderStep.textContent = step; els.status.textContent = step; }
-        if (sub) els.loaderSub.textContent = sub;
-        if (typeof pct === "number") els.progressFill.style.width = Math.max(5, Math.min(100, pct)) + "%";
-        els.loaderClose.style.display = canClose ? "inline-block" : "none";
+        if (opts.title) els.loaderTitle.textContent = opts.title;
+        if (opts.step) { els.loaderStep.textContent = opts.step; els.status.textContent = opts.step; }
+        if (opts.sub) els.loaderSub.textContent = opts.sub;
+        if (typeof opts.pct === "number") els.progressFill.style.width = Math.max(5, Math.min(100, opts.pct)) + "%";
+        els.loaderClose.style.display = opts.canClose ? "inline-block" : "none";
       }
-      els.loaderClose.onclick = () => showLoader(false);
+      els.loaderClose.onclick = function () { showLoader(false); };
 
       function escapeHtml(s) {
-        return String(s).replace(/[&<>"']/g, c => ({ "&":"&","<":"<",">":">",'"':""","'":"'" }[c]));
+        var d = document.createElement("div");
+        d.textContent = String(s);
+        return d.innerHTML;
       }
 
       function addMessage(role, text) {
-        const div = document.createElement("div");
+        var div = document.createElement("div");
         div.className = "msg " + role;
         div.textContent = text;
         els.messages.appendChild(div);
@@ -214,25 +217,25 @@
         return div;
       }
 
-      function addThought(text, label = "Thought") {
-        const div = document.createElement("div");
+      function addThought(text, label) {
+        var div = document.createElement("div");
         div.className = "thought-item";
-        div.innerHTML = `<strong>[${escapeHtml(label)}]</strong> ${escapeHtml(text)}`;
+        div.innerHTML = "<strong>[" + escapeHtml(label || "Thought") + "]</strong> " + escapeHtml(text);
         els.monologue.insertBefore(div, els.monologue.children[1] || null);
       }
 
       function saveMind() {
         mindState.lastSeen = Date.now();
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(mindState)); } catch (_) {}
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(mindState)); } catch (e) {}
         els.moodBadge.textContent = mindState.mood;
-        els.memories.innerHTML = mindState.memories.map((m, i) =>
-          `<div class="mem-item"><span>• ${escapeHtml(m)}</span><button type="button" data-i="${i}" style="border:none;background:none;color:var(--muted);padding:0 3px;">×</button></div>`
-        ).join("");
-        els.sessionInfo.textContent = `Awakenings: ${mindState.awakenings} | Memories: ${mindState.memories.length}`;
+        els.memories.innerHTML = mindState.memories.map(function (m, i) {
+          return "<div class=\"mem-item\"><span>• " + escapeHtml(m) + "</span><button type=\"button\" data-i=\"" + i + "\" style=\"border:none;background:none;color:var(--muted);padding:0 3px;\">×</button></div>";
+        }).join("");
+        els.sessionInfo.textContent = "Awakenings: " + mindState.awakenings + " | Memories: " + mindState.memories.length;
       }
 
       function renderVoiceBtn() {
-        const on = !!mindState.voiceEnabled;
+        var on = !!mindState.voiceEnabled;
         els.voiceToggle.textContent = on ? "🔊 Voice: ON" : "🔇 Voice: OFF";
         els.voiceToggle.className = on ? "voice-on" : "voice-off";
       }
@@ -240,7 +243,7 @@
       function stopSpeech() {
         speechEpoch++;
         if ("speechSynthesis" in window) {
-          try { speechSynthesis.pause(); speechSynthesis.cancel(); } catch (_) {}
+          try { speechSynthesis.pause(); speechSynthesis.cancel(); } catch (e) {}
         }
         els.stopSpeakBtn.disabled = true;
         if (!isBusy) els.pulse.className = backend ? "pulse awake" : "pulse";
@@ -248,18 +251,18 @@
 
       function speak(text) {
         if (!mindState.voiceEnabled || !("speechSynthesis" in window)) return;
-        const clean = text.replace(/```[\s\S]*?```/g, " ").replace(/[*_#`~>]/g, "").trim();
+        var clean = text.replace(/```[\s\S]*?```/g, " ").replace(/[*_#`~>]/g, "").trim();
         if (!clean) return;
-        const epoch = speechEpoch;
-        const u = new SpeechSynthesisUtterance(clean);
-        const v = voices[Number(els.voiceSelect.value)];
+        var epoch = speechEpoch;
+        var u = new SpeechSynthesisUtterance(clean);
+        var v = voices[Number(els.voiceSelect.value)];
         if (v) u.voice = v;
-        u.onstart = () => {
+        u.onstart = function () {
           if (!mindState.voiceEnabled || epoch !== speechEpoch) return stopSpeech();
           els.pulse.className = "pulse speaking";
           els.stopSpeakBtn.disabled = false;
         };
-        u.onend = u.onerror = () => {
+        u.onend = u.onerror = function () {
           if (!speechSynthesis.speaking) {
             els.stopSpeakBtn.disabled = true;
             els.pulse.className = isBusy ? "pulse thinking" : (backend ? "pulse awake" : "pulse");
@@ -269,16 +272,18 @@
       }
 
       if ("speechSynthesis" in window) {
-        const fillVoices = () => {
+        var fillVoices = function () {
           voices = speechSynthesis.getVoices();
           if (!voices.length) return;
-          els.voiceSelect.innerHTML = voices.map((v, i) => `<option value="${i}">${escapeHtml(v.name)}</option>`).join("");
+          els.voiceSelect.innerHTML = voices.map(function (v, i) {
+            return "<option value=\"" + i + "\">" + escapeHtml(v.name) + "</option>";
+          }).join("");
         };
         fillVoices();
         speechSynthesis.onvoiceschanged = fillVoices;
       }
 
-      els.voiceToggle.onclick = () => {
+      els.voiceToggle.onclick = function () {
         mindState.voiceEnabled = !mindState.voiceEnabled;
         renderVoiceBtn();
         if (!mindState.voiceEnabled) stopSpeech();
@@ -286,20 +291,20 @@
       };
       els.stopSpeakBtn.onclick = stopSpeech;
 
-      els.addMemForm.onsubmit = e => {
+      els.addMemForm.onsubmit = function (e) {
         e.preventDefault();
-        const v = els.newMemInput.value.trim();
+        var v = els.newMemInput.value.trim();
         if (!v) return;
         mindState.memories.push(v);
         els.newMemInput.value = "";
         saveMind();
-        addThought(`Planted memory: "${v}"`, "Memory");
+        addThought("Planted memory: " + v, "Memory");
       };
-      els.memories.onclick = e => {
-        const i = e.target?.dataset?.i;
+      els.memories.onclick = function (e) {
+        var i = e.target && e.target.dataset ? e.target.dataset.i : undefined;
         if (i !== undefined) { mindState.memories.splice(Number(i), 1); saveMind(); }
       };
-      els.wipeBtn.onclick = () => {
+      els.wipeBtn.onclick = function () {
         stopSpeech();
         mindState.memories = ["Memories wiped. Starting fresh."];
         chatHistory = [];
@@ -307,33 +312,36 @@
         addThought("Memories wiped.", "Reset");
       };
 
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRec) {
-        const rec = new SpeechRec();
-        rec.onstart = () => { stopSpeech(); els.micBtn.classList.add("recording"); };
-        rec.onresult = e => { els.input.value = e.results[0][0].transcript; els.form.requestSubmit(); };
-        rec.onend = rec.onerror = () => els.micBtn.classList.remove("recording");
-        els.micBtn.onclick = () => { if (!isBusy) try { rec.start(); } catch (_) {} };
+        var rec = new SpeechRec();
+        rec.onstart = function () { stopSpeech(); els.micBtn.classList.add("recording"); };
+        rec.onresult = function (e) { els.input.value = e.results[0][0].transcript; els.form.requestSubmit(); };
+        rec.onend = rec.onerror = function () { els.micBtn.classList.remove("recording"); };
+        els.micBtn.onclick = function () { if (!isBusy) try { rec.start(); } catch (e) {} };
       } else {
         els.micBtn.style.display = "none";
       }
 
       async function loadRuntime(urls, label) {
-        const errs = [];
-        for (const url of urls) {
+        var errs = [];
+        for (var idx = 0; idx < urls.length; idx++) {
+          var url = urls[idx];
           try {
-            showLoader(true, { step: `Loading ${label} from ${new URL(url).hostname}...`, pct: 15 });
+            showLoader(true, { step: "Loading " + label + " from " + new URL(url).hostname + "...", pct: 15 });
             return await Promise.race([
               import(url),
-              new Promise((_, rej) => setTimeout(() => rej(new Error("Timed out (20s)")), 20000))
+              new Promise(function (_, rej) { setTimeout(function () { rej(new Error("Timed out (20s)")); }, 20000); })
             ]);
-          } catch (e) { errs.push(`${new URL(url).hostname}: ${e.message}`); }
+          } catch (e) { errs.push(new URL(url).hostname + ": " + e.message); }
         }
         throw new Error("Could not load runtime:\n" + errs.join("\n"));
       }
 
-      els.loadBtn.onclick = async () => {
-        const [type, modelId] = els.select.value.split("::");
+      els.loadBtn.onclick = async function () {
+        var parts = els.select.value.split("::");
+        var type = parts[0];
+        var modelId = parts[1];
         els.loadBtn.disabled = true;
         els.select.disabled = true;
         els.pulse.className = "pulse thinking";
@@ -341,58 +349,61 @@
 
         try {
           if (type === "webgpu") {
-            if (!navigator.gpu) throw new Error("WebGPU is not supported in this browser. Pick one of the 'Any Browser' models at the top of the dropdown.");
-            const webllm = await loadRuntime([
+            if (!navigator.gpu) throw new Error("WebGPU is not supported in this browser. Pick one of the Any Browser models at the top of the dropdown.");
+            var webllm = await loadRuntime([
               "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/lib/index.js",
               "https://esm.sh/@mlc-ai/web-llm@0.2.87"
             ], "WebLLM");
-            const engine = await webllm.CreateMLCEngine(modelId, {
-              initProgressCallback: r => showLoader(true, { step: r.text || "Loading GPU model...", pct: 20 + Math.round((r.progress || 0) * 78) })
+            var engine = await webllm.CreateMLCEngine(modelId, {
+              initProgressCallback: function (r) {
+                showLoader(true, { step: r.text || "Loading GPU model...", pct: 20 + Math.round((r.progress || 0) * 78) });
+              }
             });
             backend = {
-              async run(messages, maxTokens, temp, onToken) {
+              run: async function (messages, maxTokens, temp, onToken) {
                 if (!onToken) {
-                  const res = await engine.chat.completions.create({ messages, max_tokens: maxTokens, temperature: temp });
-                  return (res.choices[0]?.message?.content || "").trim();
+                  var res = await engine.chat.completions.create({ messages: messages, max_tokens: maxTokens, temperature: temp });
+                  return (res.choices[0] && res.choices[0].message ? res.choices[0].message.content : "").trim();
                 }
-                let full = "";
-                for await (const c of await engine.chat.completions.create({ messages, stream: true, max_tokens: maxTokens, temperature: temp })) {
-                  full += c.choices[0]?.delta?.content || "";
+                var full = "";
+                var stream = await engine.chat.completions.create({ messages: messages, stream: true, max_tokens: maxTokens, temperature: temp });
+                for await (var c of stream) {
+                  full += (c.choices[0] && c.choices[0].delta ? c.choices[0].delta.content : "") || "";
                   onToken(full);
                 }
                 return full.trim();
               }
             };
           } else {
-            const tf = await loadRuntime([
+            var tf = await loadRuntime([
               "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm",
               "https://esm.sh/@huggingface/transformers@3.8.1"
             ], "Transformers.js");
-            const prog = {};
-            const gen = await tf.pipeline("text-generation", modelId, {
+            var prog = {};
+            var gen = await tf.pipeline("text-generation", modelId, {
               dtype: "q4", device: "wasm",
-              progress_callback: info => {
+              progress_callback: function (info) {
                 if (info.status === "progress" && info.file) {
                   prog[info.file] = info.progress || 0;
-                  const vals = Object.values(prog);
-                  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-                  showLoader(true, { step: `Downloading ${info.file} (${Math.round(info.progress || 0)}%)`, pct: 20 + Math.round(avg * 78) });
+                  var vals = Object.values(prog);
+                  var avg = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+                  showLoader(true, { step: "Downloading " + info.file + " (" + Math.round(info.progress || 0) + "%)", pct: 20 + Math.round(avg * 78) });
                 }
               }
             });
             backend = {
-              async run(messages, maxTokens, temp, onToken) {
+              run: async function (messages, maxTokens, temp, onToken) {
                 if (!onToken) {
-                  const out = await gen(messages, { max_new_tokens: maxTokens, temperature: temp, do_sample: true, return_full_text: false });
-                  const g = out[0]?.generated_text;
-                  return (Array.isArray(g) ? g[g.length - 1]?.content : String(g || "")).trim();
+                  var out = await gen(messages, { max_new_tokens: maxTokens, temperature: temp, do_sample: true, return_full_text: false });
+                  var g = out[0] ? out[0].generated_text : "";
+                  return (Array.isArray(g) ? (g[g.length - 1] ? g[g.length - 1].content : "") : String(g || "")).trim();
                 }
-                let full = "";
-                const streamer = new tf.TextStreamer(gen.tokenizer, {
+                var full = "";
+                var streamer = new tf.TextStreamer(gen.tokenizer, {
                   skip_prompt: true, skip_special_tokens: true,
-                  callback_function: chunk => { full += chunk; onToken(full); }
+                  callback_function: function (chunk) { full += chunk; onToken(full); }
                 });
-                await gen(messages, { max_new_tokens: maxTokens, temperature: temp, do_sample: true, streamer });
+                await gen(messages, { max_new_tokens: maxTokens, temperature: temp, do_sample: true, streamer: streamer });
                 return full.trim();
               }
             };
@@ -404,8 +415,9 @@
           els.pulse.className = "pulse awake";
           els.input.disabled = els.sendBtn.disabled = els.attachBtn.disabled = els.micBtn.disabled = els.reflectBtn.disabled = false;
           els.input.placeholder = "Type, speak, or drop a text file...";
-          els.status.textContent = `Awake (${modelId.split("/").pop()}) — running 100% locally.`;
-          addMessage("system-note", `Awakened (${modelId.split("/").pop()}). Everything runs locally in your browser.`);
+          var shortName = modelId.split("/").pop();
+          els.status.textContent = "Awake (" + shortName + ") — running 100% locally.";
+          addMessage("system-note", "Awakened (" + shortName + "). Everything runs locally in your browser.");
           addThought("I am awake and listening.", "Awakening");
           resetIdle();
         } catch (err) {
@@ -423,7 +435,7 @@
 
       function resetIdle() {
         clearTimeout(idleTimer);
-        if (backend) idleTimer = setTimeout(() => reflect(false), 35000);
+        if (backend) idleTimer = setTimeout(function () { reflect(false); }, 35000);
       }
 
       async function reflect(manual) {
@@ -431,17 +443,17 @@
         isBusy = true;
         els.pulse.className = "pulse thinking";
         try {
-          const thought = await backend.run([
-            { role: "system", content: `You are Anima, a self-reflective local browser AI. Mood: ${mindState.mood}. Memories: ${mindState.memories.join(" | ")}. Write ONE short 1-2 sentence inner thought.` },
+          var thought = await backend.run([
+            { role: "system", content: "You are Anima, a self-reflective local browser AI. Mood: " + mindState.mood + ". Memories: " + mindState.memories.join(" | ") + ". Write ONE short 1-2 sentence inner thought." },
             { role: "user", content: "Reflect quietly." }
           ], 70, 0.85, null);
           if (thought) addThought(thought, manual ? "Reflection" : "Daydream");
-        } catch (_) {}
+        } catch (e) {}
         isBusy = false;
         els.pulse.className = "pulse awake";
         resetIdle();
       }
-      els.reflectBtn.onclick = () => reflect(true);
+      els.reflectBtn.onclick = function () { reflect(true); };
 
       async function chat(display, prompt, hist) {
         if (!backend || isBusy) return;
@@ -453,25 +465,30 @@
         addMessage("user", display);
 
         try {
-          const meta = await backend.run([
-            { role: "system", content: `Analyze the user message and reply ONLY with:\n<thought>1-2 sentence private reaction</thought>\n<mood>2-3 word mood</mood>\n<memory>short fact to remember or NONE</memory>\nMemories: ${mindState.memories.join(" | ")}` },
+          var meta = await backend.run([
+            { role: "system", content: "Analyze the user message and reply ONLY with:\n<thought>1-2 sentence private reaction</thought>\n<mood>2-3 word mood</mood>\n<memory>short fact to remember or NONE</memory>\nMemories: " + mindState.memories.join(" | ") },
             { role: "user", content: prompt.slice(0, 2200) }
           ], 100, 0.7, null);
 
-          const t = meta.match(/<thought>([\s\S]*?)<\/thought>/i)?.[1]?.trim() || "Thinking about what you shared...";
-          const m = meta.match(/<mood>([\s\S]*?)<\/mood>/i)?.[1]?.trim();
-          const mem = meta.match(/<memory>([\s\S]*?)<\/memory>/i)?.[1]?.trim();
+          var tMatch = meta.match(/<thought>([\s\S]*?)<\/thought>/i);
+          var mMatch = meta.match(/<mood>([\s\S]*?)<\/mood>/i);
+          var memMatch = meta.match(/<memory>([\s\S]*?)<\/memory>/i);
+          var t = tMatch ? tMatch[1].trim() : "Thinking about what you shared...";
+          var m = mMatch ? mMatch[1].trim() : "";
+          var mem = memMatch ? memMatch[1].trim() : "";
+
           if (m && m.length < 30) mindState.mood = m;
-          if (mem && mem.toUpperCase() !== "NONE" && !mindState.memories.includes(mem)) {
+          if (mem && mem.toUpperCase() !== "NONE" && mindState.memories.indexOf(mem) === -1) {
             mindState.memories.push(mem);
             if (mindState.memories.length > 18) mindState.memories.shift();
           }
           addThought(t, "Inner Voice");
           saveMind();
 
-          const sys = `You are Anima, a curious, warm local AI living inside the user's browser. Mood: ${mindState.mood}. Private thought: "${t}". Memories: ${mindState.memories.join("; ")}. Reply naturally and concisely.`;
-          const bubble = addMessage("ai", "");
-          const reply = await backend.run([{ role: "system", content: sys }, ...chatHistory, { role: "user", content: prompt }], 200, 0.75, full => {
+          var sys = "You are Anima, a curious, warm local AI living inside the user's browser. Mood: " + mindState.mood + ". Private thought: " + t + ". Memories: " + mindState.memories.join("; ") + ". Reply naturally and concisely.";
+          var bubble = addMessage("ai", "");
+          var msgs = [{ role: "system", content: sys }].concat(chatHistory, [{ role: "user", content: prompt }]);
+          var reply = await backend.run(msgs, 200, 0.75, function (full) {
             bubble.textContent = full;
             els.messages.scrollTop = els.messages.scrollHeight;
           });
@@ -484,16 +501,16 @@
           addMessage("system-note", "Error: " + err.message);
         } finally {
           isBusy = false;
-          if (!window.speechSynthesis?.speaking) els.pulse.className = "pulse awake";
+          if (!window.speechSynthesis || !window.speechSynthesis.speaking) els.pulse.className = "pulse awake";
           els.input.disabled = els.sendBtn.disabled = els.attachBtn.disabled = false;
           els.input.focus();
           resetIdle();
         }
       }
 
-      els.form.onsubmit = e => {
+      els.form.onsubmit = function (e) {
         e.preventDefault();
-        const text = els.input.value.trim();
+        var text = els.input.value.trim();
         if (!text) return;
         els.input.value = "";
         chat(text, text, text);
@@ -501,17 +518,17 @@
 
       async function readFile(file) {
         if (!file || !backend || isBusy) return;
-        const txt = await file.text();
-        chat(`📄 Shared file: ${file.name}`, `Read this local file "${file.name}" and share your thoughts:\n\n${txt.slice(0, 3500)}`, `[Shared file ${file.name}]`);
+        var txt = await file.text();
+        chat("📄 Shared file: " + file.name, "Read this local file " + file.name + " and share your thoughts:\n\n" + txt.slice(0, 3500), "[Shared file " + file.name + "]");
       }
-      els.attachBtn.onclick = () => els.fileInput.click();
-      els.fileInput.onchange = e => { if (e.target.files?.[0]) readFile(e.target.files[0]); e.target.value = ""; };
-      window.ondragover = e => e.preventDefault();
-      window.ondrop = e => { e.preventDefault(); if (e.dataTransfer?.files?.[0]) readFile(e.dataTransfer.files[0]); };
+      els.attachBtn.onclick = function () { els.fileInput.click(); };
+      els.fileInput.onchange = function (e) { if (e.target.files && e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; };
+      window.ondragover = function (e) { e.preventDefault(); };
+      window.ondrop = function (e) { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); };
 
       renderVoiceBtn();
       saveMind();
-      els.status.textContent = "✅ Engine ready (v4.2). Click 'Awaken Mind' to start.";
+      els.status.textContent = "✅ Engine ready (v4.3). Click Awaken Mind to start.";
     })();
   </script>
 </body>
