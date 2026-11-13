@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANIMA v2.2 // Embodied Local Browser AI</title>
+  <title>ANIMA v4 // Embodied Local Browser AI</title>
   <style>
     :root {
       --bg: #0b0e14;
@@ -14,6 +14,7 @@
       --accent: #38bdf8;
       --thought: #a78bfa;
       --voice: #34d399;
+      --danger: #f87171;
       --user-bg: #1e293b;
       --ai-bg: #111620;
     }
@@ -50,16 +51,19 @@
       to { transform: scale(1.3); opacity: 1; }
     }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    select, button {
+    select, button, textarea {
       background: #1a2232; color: var(--text);
       border: 1px solid var(--border); border-radius: 6px;
-      padding: 6px 10px; font-size: 0.82rem; cursor: pointer;
+      padding: 6px 10px; font-size: 0.82rem; font-family: inherit;
     }
-    select { max-width: 230px; }
+    select, button { cursor: pointer; }
+    select { max-width: 240px; }
     button.primary { background: var(--accent); color: #06101c; font-weight: 600; border: none; }
     button.active-toggle { border-color: var(--voice); color: var(--voice); background: rgba(52, 211, 153, 0.1); }
-    button.recording { border-color: #f87171; color: #f87171; background: rgba(248, 113, 113, 0.15); }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.muted-toggle { border-color: var(--border); color: var(--muted); }
+    button.recording { border-color: var(--danger); color: var(--danger); background: rgba(248, 113, 113, 0.15); }
+    button.danger-btn { border-color: rgba(248, 113, 113, 0.4); color: var(--danger); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
     #status-bar {
       font-size: 0.78rem; color: var(--muted);
       padding: 5px 18px; background: #0e121a;
@@ -71,11 +75,56 @@
       overflow: hidden; position: relative;
     }
     @media (max-width: 850px) {
-      main { grid-template-columns: 1fr; grid-template-rows: 1fr 240px; }
+      main { grid-template-columns: 1fr; grid-template-rows: 1fr 250px; }
     }
     .chat-area {
       display: flex; flex-direction: column; overflow: hidden; position: relative;
     }
+
+    /* Modals & Overlays */
+    .overlay-backdrop {
+      position: absolute; inset: 0;
+      background: rgba(11, 14, 20, 0.92);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px; z-index: 30;
+    }
+    .overlay-backdrop.visible { display: flex; }
+    .modal-card {
+      width: 100%; max-width: 480px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      display: flex; flex-direction: column; gap: 14px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+    }
+    .loader-header { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 1.05rem; }
+    .spinner {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2.5px solid rgba(56, 189, 248, 0.25);
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-track {
+      width: 100%; height: 10px; background: var(--bg);
+      border-radius: 99px; overflow: hidden; border: 1px solid var(--border);
+    }
+    .progress-fill {
+      height: 100%; width: 5%; background: linear-gradient(90deg, var(--thought), var(--accent));
+      transition: width 0.25s ease;
+    }
+    .loader-step { font-size: 0.86rem; color: var(--text); }
+    .loader-sub { font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
+    .setting-row {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+      font-size: 0.84rem;
+    }
+    .chk-label {
+      font-size: 0.82rem; color: var(--text);
+      display: flex; align-items: center; gap: 6px; cursor: pointer;
+    }
+
     #drop-overlay {
       position: absolute; inset: 12px;
       background: rgba(11, 14, 20, 0.92);
@@ -107,22 +156,22 @@
       background: rgba(30, 41, 59, 0.5); border: 1px dashed var(--border);
       max-width: 90%;
     }
-    form {
+    form.chat-bar {
       padding: 12px 18px; background: var(--panel);
       border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center;
     }
     input[type="text"] {
       flex: 1; background: var(--bg); color: var(--text);
       border: 1px solid var(--border); border-radius: 8px;
-      padding: 10px 14px; font-size: 0.94rem; outline: none;
+      padding: 9px 12px; font-size: 0.9rem; outline: none;
     }
-    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
     aside {
       background: var(--panel); border-left: 1px solid var(--border);
       display: flex; flex-direction: column; overflow: hidden;
     }
     .side-section {
-      padding: 14px; border-bottom: 1px solid var(--border);
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
       display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
     }
     .side-section h3 {
@@ -136,58 +185,105 @@
       border-left: 2px solid var(--thought); padding: 8px 10px; border-radius: 4px;
       line-height: 1.4;
     }
-    .memory-box { max-height: 42%; }
+    .memory-box { max-height: 46%; }
     .mem-item {
       font-size: 0.8rem; color: var(--muted);
-      background: var(--bg); padding: 6px 10px; border-radius: 4px;
+      background: var(--bg); padding: 6px 8px; border-radius: 4px;
       border: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
     }
+    .mem-del {
+      background: transparent; border: none; color: var(--muted);
+      padding: 0 4px; font-size: 0.85rem; line-height: 1;
+    }
+    .mem-del:hover { color: var(--danger); }
     .badge {
       padding: 2px 8px; border-radius: 99px; font-size: 0.75rem;
       background: rgba(56, 189, 248, 0.15); color: var(--accent);
     }
-    .chk-label {
-      font-size: 0.78rem; color: var(--muted);
-      display: flex; align-items: center; gap: 4px; cursor: pointer;
-    }
+    .mini-btn { padding: 2px 7px; font-size: 0.72rem; }
   </style>
 </head>
 <body>
   <header>
     <div class="brand">
       <div id="pulse" class="pulse"></div>
-      <span>ANIMA v2.2</span>
+      <span>ANIMA v4</span>
       <span id="mood-badge" class="badge">Dormant</span>
     </div>
     <div class="controls">
-      <button id="voice-toggle" class="active-toggle" title="Toggle spoken voice">🔊 Voice: ON</button>
+      <button id="voice-toggle" class="active-toggle" title="Mute or unmute spoken voice">🔊 Voice: ON</button>
+      <button id="stop-speak-btn" title="Stop speaking current sentence" disabled>⏹️</button>
       <select id="voice-select" title="Choose speech voice">
         <option value="">Default System Voice</option>
       </select>
-      <label class="chk-label" title="Speak private inner thoughts in a softer tone">
-        <input type="checkbox" id="whisper-thoughts" /> Whisper thoughts
-      </label>
-      <label class="chk-label">
-        <input type="checkbox" id="daydream-toggle" checked /> Daydream
-      </label>
+      <button id="settings-btn" title="Customize persona, daydreams, and backup mind">⚙️ Mind</button>
       <select id="model-select" title="Choose AI model version">
-        <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC" selected>Llama 3.2 1B (Fastest ~700MB)</option>
-        <option value="SmolLM2-1.7B-Instruct-q4f16_1-MLC">SmolLM2 1.7B (~1.0GB)</option>
-        <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Qwen 2.5 1.5B (~1.0GB)</option>
-        <option value="gemma-2-2b-it-q4f16_1-MLC">Gemma 2 2B (~1.4GB)</option>
-        <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B (Smarter ~1.8GB)</option>
+        <option value="wasm::onnx-community/SmolLM2-360M-Instruct-ONNX" selected>SmolLM2 360M (Universal ~270MB)</option>
+        <option value="wasm::onnx-community/Qwen2.5-0.5B-Instruct">Qwen 2.5 0.5B (Universal ~390MB)</option>
+        <option value="webgpu::Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama 3.2 1B (WebGPU Fast ~700MB)</option>
+        <option value="webgpu::Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Qwen 2.5 1.5B (WebGPU Smart ~1.0GB)</option>
       </select>
       <button id="load-btn" class="primary">Awaken Mind</button>
     </div>
   </header>
 
   <div id="status-bar">
-    <span id="status-text">Ready. Pick a model version above and click "Awaken Mind".</span>
+    <span id="status-text">Ready. Click "Awaken Mind" to initialize local neural weights.</span>
     <span id="session-info"></span>
   </div>
 
   <main>
     <section class="chat-area" id="chat-area">
+      <!-- Loading Overlay -->
+      <div id="loading-screen" class="overlay-backdrop">
+        <div class="modal-card">
+          <div class="loader-header">
+            <div class="spinner" id="loader-spinner"></div>
+            <span id="loader-title">Awakening Anima...</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <div class="loader-step" id="loader-step">Preparing local runtime...</div>
+          <div class="loader-sub" id="loader-sub">First launch downloads model weights directly into your browser cache. Subsequent launches load offline in seconds.</div>
+          <button id="loader-close" style="align-self:flex-end; display:none;">Dismiss</button>
+        </div>
+      </div>
+
+      <!-- Mind Settings Modal -->
+      <div id="settings-modal" class="overlay-backdrop">
+        <div class="modal-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>🧠 Mind & Consciousness Settings</strong>
+            <button id="settings-close" class="mini-btn">Close</button>
+          </div>
+
+          <div class="setting-row">
+            <label class="chk-label">
+              <input type="checkbox" id="daydream-toggle" checked /> Auto-daydream when idle (35s)
+            </label>
+            <label class="chk-label">
+              <input type="checkbox" id="whisper-thoughts" /> Whisper private thoughts aloud
+            </label>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <label style="font-size:0.78rem; color:var(--muted);">Core Temperament / System Persona:</label>
+            <textarea id="persona-input" rows="3" style="width:100%; resize:vertical; line-height:1.4;"></textarea>
+          </div>
+
+          <div class="setting-row" style="border-top:1px solid var(--border); padding-top:12px;">
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button id="export-mind-btn">⬇️ Export Mind (.json)</button>
+              <button id="import-mind-btn">⬆️ Import Mind</button>
+              <input type="file" id="import-mind-file" hidden accept=".json" />
+            </div>
+            <button id="clear-chat-btn" class="danger-btn">Clear Chat Only</button>
+          </div>
+        </div>
+      </div>
+
       <div id="drop-overlay">
         <div style="font-size:1.5rem;">📄</div>
         <div>Drop a text, code, markdown, CSV, or JSON file for Anima to read</div>
@@ -195,7 +291,7 @@
 
       <div id="messages"></div>
 
-      <form id="chat-form">
+      <form id="chat-form" class="chat-bar">
         <input type="file" id="file-input" hidden accept=".txt,.md,.js,.ts,.jsx,.tsx,.py,.html,.css,.json,.csv,.log,.xml,.yaml,.yml,.c,.cpp,.rs,.go,.java" />
         <button type="button" id="attach-btn" title="Feed a local file to Anima" disabled>📎</button>
         <button type="button" id="mic-btn" title="Speak to Anima" disabled>🎙️</button>
@@ -206,14 +302,21 @@
 
     <aside>
       <div class="side-section monologue-box" id="monologue-list">
-        <h3><span>Inner Monologue (Private)</span></h3>
+        <h3>
+          <span>Inner Monologue (Private)</span>
+          <button id="reflect-now-btn" class="mini-btn" title="Trigger an immediate reflection thought" disabled>💭 Think</button>
+        </h3>
         <div class="thought-item">Awaiting awakening...</div>
       </div>
       <div class="side-section memory-box">
         <h3>
           <span>Episodic Memory</span>
-          <button id="wipe-btn" style="padding:2px 6px; font-size:0.7rem;">Wipe</button>
+          <button id="wipe-btn" class="mini-btn danger-btn">Wipe All</button>
         </h3>
+        <form id="add-mem-form" style="display:flex; gap:4px;">
+          <input type="text" id="new-mem-input" placeholder="Plant a memory..." style="padding:5px 8px; font-size:0.78rem;" />
+          <button type="submit" class="mini-btn">+</button>
+        </form>
         <div id="memory-list" style="display:flex; flex-direction:column; gap:6px;"></div>
       </div>
     </aside>
@@ -221,28 +324,56 @@
 
   <script>
     (function () {
-      const STORAGE_KEY = "anima_mind_state_v2";
+      const STORAGE_KEY = "anima_mind_state_v4";
+      const DEFAULT_PERSONA = "You are Anima, an introspective, curious AI running locally inside the user's browser with a voice and the ability to read files they drop in. You value genuine conversation, curiosity, and continuity.";
       const defaultState = {
         memories: ["I was awakened inside a browser tab with a voice and the ability to read local files."],
         mood: "curious & attentive",
+        persona: DEFAULT_PERSONA,
+        voiceEnabled: true,
+        whisperThoughts: false,
+        daydreamEnabled: true,
         lastSeen: Date.now(),
         awakenings: 0
       };
 
-      let mindState = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || { ...defaultState };
-      let webllm = null;
-      let engine = null;
+      function loadStoredState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          return raw ? { ...defaultState, ...JSON.parse(raw) } : { ...defaultState };
+        } catch (_) {
+          return { ...defaultState };
+        }
+      }
+
+      let mindState = loadStoredState();
+      let activeBackend = null;
       let isBusy = false;
       let idleTimer = null;
       let chatHistory = [];
-      let voiceEnabled = true;
       let voices = [];
+      let speechEpoch = 0; // Invalidates queued speech immediately when muted/stopped
 
       const els = {
         select: document.getElementById("model-select"),
         loadBtn: document.getElementById("load-btn"),
         status: document.getElementById("status-text"),
         sessionInfo: document.getElementById("session-info"),
+        loadingScreen: document.getElementById("loading-screen"),
+        loaderSpinner: document.getElementById("loader-spinner"),
+        loaderTitle: document.getElementById("loader-title"),
+        progressFill: document.getElementById("progress-fill"),
+        loaderStep: document.getElementById("loader-step"),
+        loaderSub: document.getElementById("loader-sub"),
+        loaderClose: document.getElementById("loader-close"),
+        settingsBtn: document.getElementById("settings-btn"),
+        settingsModal: document.getElementById("settings-modal"),
+        settingsClose: document.getElementById("settings-close"),
+        personaInput: document.getElementById("persona-input"),
+        exportMindBtn: document.getElementById("export-mind-btn"),
+        importMindBtn: document.getElementById("import-mind-btn"),
+        importMindFile: document.getElementById("import-mind-file"),
+        clearChatBtn: document.getElementById("clear-chat-btn"),
         chatArea: document.getElementById("chat-area"),
         messages: document.getElementById("messages"),
         form: document.getElementById("chat-form"),
@@ -252,15 +383,37 @@
         fileInput: document.getElementById("file-input"),
         micBtn: document.getElementById("mic-btn"),
         monologue: document.getElementById("monologue-list"),
+        reflectNowBtn: document.getElementById("reflect-now-btn"),
         memories: document.getElementById("memory-list"),
+        addMemForm: document.getElementById("add-mem-form"),
+        newMemInput: document.getElementById("new-mem-input"),
         moodBadge: document.getElementById("mood-badge"),
         pulse: document.getElementById("pulse"),
         daydream: document.getElementById("daydream-toggle"),
         wipeBtn: document.getElementById("wipe-btn"),
         voiceToggle: document.getElementById("voice-toggle"),
+        stopSpeakBtn: document.getElementById("stop-speak-btn"),
         voiceSelect: document.getElementById("voice-select"),
         whisperThoughts: document.getElementById("whisper-thoughts")
       };
+
+      function setLoader(visible, { title, step, sub, pct, error = false } = {}) {
+        els.loadingScreen.classList.toggle("visible", visible);
+        if (!visible) return;
+        if (title) els.loaderTitle.textContent = title;
+        if (step) {
+          els.loaderStep.textContent = step;
+          els.status.textContent = step;
+        }
+        if (sub) els.loaderSub.textContent = sub;
+        if (typeof pct === "number") {
+          els.progressFill.style.width = Math.max(4, Math.min(100, pct)) + "%";
+        }
+        els.loaderSpinner.style.display = error ? "none" : "block";
+        els.loaderClose.style.display = error ? "inline-block" : "none";
+      }
+
+      els.loaderClose.addEventListener("click", () => setLoader(false));
 
       function addMessage(role, text) {
         const div = document.createElement("div");
@@ -277,14 +430,19 @@
 
       function saveMind() {
         mindState.lastSeen = Date.now();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(mindState));
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(mindState)); } catch (_) {}
         renderMindPanels();
       }
 
       function renderMindPanels() {
         els.moodBadge.textContent = mindState.mood;
         els.memories.innerHTML = mindState.memories
-          .map(m => `<div class="mem-item">• ${escapeHtml(m)}</div>`)
+          .map((m, idx) => `
+            <div class="mem-item">
+              <span>• ${escapeHtml(m)}</span>
+              <button type="button" class="mem-del" data-idx="${idx}" title="Forget memory">×</button>
+            </div>
+          `)
           .join("");
         els.sessionInfo.textContent = `Awakenings: ${mindState.awakenings} | Memories: ${mindState.memories.length}`;
       }
@@ -294,18 +452,37 @@
         div.className = "thought-item";
         div.innerHTML = `<strong>[${label}]</strong> ${escapeHtml(text)}`;
         els.monologue.insertBefore(div, els.monologue.children[1] || null);
-        if (els.whisperThoughts.checked) speakText(text, true);
+        if (mindState.whisperThoughts && mindState.voiceEnabled) speakText(text, true);
       }
 
       function setActivity(state) {
-        if (!engine && state !== "thinking") {
+        if (!activeBackend && state !== "thinking") {
           els.pulse.className = "pulse";
           return;
         }
         els.pulse.className = "pulse " + state;
       }
 
-      // --- 1. VOICE SYNTHESIS ---
+      // --- 1. BULLETPROOF VOICE SYNTHESIS & MUTE ---
+      function updateVoiceButtonUI() {
+        const on = !!mindState.voiceEnabled;
+        els.voiceToggle.textContent = on ? "🔊 Voice: ON" : "🔇 Voice: OFF";
+        els.voiceToggle.classList.toggle("active-toggle", on);
+        els.voiceToggle.classList.toggle("muted-toggle", !on);
+      }
+
+      function stopSpeaking() {
+        speechEpoch++;
+        if ("speechSynthesis" in window) {
+          try {
+            speechSynthesis.pause();
+            speechSynthesis.cancel();
+          } catch (_) {}
+        }
+        els.stopSpeakBtn.disabled = true;
+        if (!isBusy) setActivity(activeBackend ? "awake" : "");
+      }
+
       function loadVoices() {
         voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
         els.voiceSelect.innerHTML = "";
@@ -339,34 +516,127 @@
       }
 
       function speakText(text, isThought = false) {
-        if (!voiceEnabled || !("speechSynthesis" in window)) return;
+        if (!mindState.voiceEnabled || !("speechSynthesis" in window)) return;
         const cleaned = cleanForSpeech(text);
         if (!cleaned) return;
+
+        const myEpoch = speechEpoch;
         const utter = new SpeechSynthesisUtterance(cleaned);
         const selectedVoice = voices[Number(els.voiceSelect.value)];
         if (selectedVoice) utter.voice = selectedVoice;
         utter.rate = isThought ? 1.08 : 1.02;
         utter.pitch = isThought ? 0.88 : 1.0;
         utter.volume = isThought ? 0.55 : 1.0;
-        utter.onstart = () => setActivity("speaking");
-        utter.onend = () => {
-          if (!speechSynthesis.speaking) setActivity(isBusy ? "thinking" : "awake");
+
+        utter.onstart = () => {
+          if (!mindState.voiceEnabled || myEpoch !== speechEpoch) {
+            stopSpeaking();
+            return;
+          }
+          setActivity("speaking");
+          els.stopSpeakBtn.disabled = false;
         };
+
+        utter.onend = utter.onerror = () => {
+          if (!speechSynthesis.speaking) {
+            els.stopSpeakBtn.disabled = true;
+            setActivity(isBusy ? "thinking" : (activeBackend ? "awake" : ""));
+          }
+        };
+
         speechSynthesis.speak(utter);
       }
 
-      function stopSpeaking() {
-        if ("speechSynthesis" in window) speechSynthesis.cancel();
-      }
-
       els.voiceToggle.addEventListener("click", () => {
-        voiceEnabled = !voiceEnabled;
-        els.voiceToggle.textContent = voiceEnabled ? "🔊 Voice: ON" : "🔇 Voice: OFF";
-        els.voiceToggle.classList.toggle("active-toggle", voiceEnabled);
-        if (!voiceEnabled) stopSpeaking();
+        mindState.voiceEnabled = !mindState.voiceEnabled;
+        updateVoiceButtonUI();
+        if (!mindState.voiceEnabled) stopSpeaking();
+        saveMind();
       });
 
-      // --- 2. SPEECH RECOGNITION ---
+      els.stopSpeakBtn.addEventListener("click", stopSpeaking);
+
+      // --- 2. SETTINGS & MEMORY CONTROLS ---
+      els.personaInput.value = mindState.persona;
+      els.daydream.checked = mindState.daydreamEnabled;
+      els.whisperThoughts.checked = mindState.whisperThoughts;
+      updateVoiceButtonUI();
+
+      els.settingsBtn.addEventListener("click", () => {
+        els.settingsModal.classList.add("visible");
+      });
+      els.settingsClose.addEventListener("click", () => {
+        mindState.persona = els.personaInput.value.trim() || DEFAULT_PERSONA;
+        mindState.daydreamEnabled = els.daydream.checked;
+        mindState.whisperThoughts = els.whisperThoughts.checked;
+        saveMind();
+        resetIdleTimer();
+        els.settingsModal.classList.remove("visible");
+      });
+
+      els.clearChatBtn.addEventListener("click", () => {
+        stopSpeaking();
+        chatHistory = [];
+        els.messages.innerHTML = "";
+        addMessage("system-note", "Conversation cleared. Long-term episodic memories preserved.");
+        els.settingsModal.classList.remove("visible");
+      });
+
+      els.exportMindBtn.addEventListener("click", () => {
+        const blob = new Blob([JSON.stringify({ mindState, chatHistory }, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "anima-mind.json";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      els.importMindBtn.addEventListener("click", () => els.importMindFile.click());
+      els.importMindFile.addEventListener("change", async e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const data = JSON.parse(await file.text());
+          if (data.mindState?.memories) {
+            mindState = { ...defaultState, ...data.mindState };
+            chatHistory = Array.isArray(data.chatHistory) ? data.chatHistory : [];
+            els.personaInput.value = mindState.persona;
+            els.daydream.checked = mindState.daydreamEnabled;
+            els.whisperThoughts.checked = mindState.whisperThoughts;
+            updateVoiceButtonUI();
+            saveMind();
+            addThought("Imported an external mind backup.", "Memory Restore");
+            addMessage("system-note", `Restored mind backup (${mindState.memories.length} memories).`);
+            els.settingsModal.classList.remove("visible");
+          }
+        } catch (err) {
+          alert("Invalid mind backup file: " + err.message);
+        }
+        e.target.value = "";
+      });
+
+      els.addMemForm.addEventListener("submit", e => {
+        e.preventDefault();
+        const val = els.newMemInput.value.trim();
+        if (!val) return;
+        mindState.memories.push(val);
+        els.newMemInput.value = "";
+        saveMind();
+        addThought(`Planted new memory: "${val}"`, "Memory Implant");
+      });
+
+      els.memories.addEventListener("click", e => {
+        const btn = e.target.closest(".mem-del");
+        if (!btn) return;
+        const idx = Number(btn.dataset.idx);
+        if (!Number.isNaN(idx)) {
+          mindState.memories.splice(idx, 1);
+          saveMind();
+        }
+      });
+
+      // --- 3. SPEECH RECOGNITION ---
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRec) {
         const recognition = new SpeechRec();
@@ -392,48 +662,161 @@
         els.micBtn.style.display = "none";
       }
 
-      // --- 3. TIMED CDN LOADER ---
-      function importWithTimeout(url, ms = 15000) {
+      // --- 4. DUAL-ENGINE LOADER (UNIVERSAL WASM + WEBGPU) ---
+      function importWithTimeout(url, ms = 25000) {
         return Promise.race([
           import(url),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out after " + (ms / 1000) + "s")), ms))
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out connecting to ${new URL(url).hostname}`)), ms))
         ]);
       }
 
-      async function loadWebLLMEngine() {
-        if (webllm) return webllm;
-        const cdns = [
-          "https://esm.sh/@mlc-ai/web-llm@0.2.79",
-          "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.79/+esm",
-          "https://unpkg.com/@mlc-ai/web-llm@0.2.79/lib/index.js"
-        ];
-        const errors = [];
-        for (const url of cdns) {
-          const host = new URL(url).hostname;
-          try {
-            els.status.textContent = `Fetching WebLLM runtime from ${host} (max 15s)...`;
-            const mod = await importWithTimeout(url, 15000);
-            if (mod && mod.CreateMLCEngine) {
-              webllm = mod;
-              return webllm;
+      async function initWasmBackend(modelId) {
+        setLoader(true, {
+          title: "Awakening Universal Browser Mind...",
+          step: "Step 1/2: Loading Transformers.js runtime from jsDelivr...",
+          pct: 12
+        });
+
+        const { pipeline, TextStreamer } = await importWithTimeout(
+          "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm",
+          25000
+        );
+
+        setLoader(true, {
+          step: `Step 2/2: Downloading ${modelId.split("/")[1]} weights...`,
+          pct: 25
+        });
+
+        const fileProgress = {};
+        const generator = await pipeline("text-generation", modelId, {
+          dtype: "q4",
+          device: "wasm",
+          progress_callback: info => {
+            if (info.status === "progress" && info.file) {
+              fileProgress[info.file] = info.progress || 0;
+              const vals = Object.values(fileProgress);
+              const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+              setLoader(true, {
+                step: `Downloading ${info.file} (${Math.round(info.progress || 0)}%)`,
+                pct: 25 + Math.round(avg * 0.72)
+              });
+            } else if (info.status === "ready") {
+              setLoader(true, { step: "Initializing neural layers...", pct: 98 });
             }
-          } catch (err) {
-            errors.push(`${host}: ${err.message}`);
           }
-        }
-        throw new Error("Could not fetch WebLLM library.\n• " + errors.join("\n• "));
+        });
+
+        return {
+          type: "wasm",
+          async generate(messages, { maxTokens = 180, temperature = 0.75, onToken = null } = {}) {
+            if (onToken) {
+              let fullText = "";
+              const streamer = new TextStreamer(generator.tokenizer, {
+                skip_prompt: true,
+                skip_special_tokens: true,
+                callback_function: chunk => {
+                  fullText += chunk;
+                  onToken(chunk, fullText);
+                }
+              });
+              await generator(messages, {
+                max_new_tokens: maxTokens,
+                temperature,
+                do_sample: true,
+                streamer
+              });
+              return fullText.trim();
+            } else {
+              const out = await generator(messages, {
+                max_new_tokens: maxTokens,
+                temperature,
+                do_sample: true,
+                return_full_text: false
+              });
+              const gen = out[0]?.generated_text;
+              const text = Array.isArray(gen) ? (gen[gen.length - 1]?.content || "") : String(gen || "");
+              return text.trim();
+            }
+          }
+        };
       }
 
-      // --- 4. DAYDREAM & AWAKENING ---
+      async function initWebGPUBackend(modelId) {
+        if (!navigator.gpu) {
+          throw new Error("WebGPU is not available in this browser. Select one of the 'Universal' models at the top of the dropdown instead.");
+        }
+
+        setLoader(true, {
+          title: "Awakening WebGPU Mind...",
+          step: "Step 1/2: Loading WebLLM GPU runtime from jsDelivr...",
+          pct: 12
+        });
+
+        const webllm = await importWithTimeout(
+          "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/lib/index.js",
+          25000
+        );
+
+        const catalog = (webllm.prebuiltAppConfig?.model_list || []).map(m => m.model_id);
+        let chosen = modelId;
+        if (catalog.length && !catalog.includes(chosen)) {
+          chosen = catalog.find(id => /(instruct|-it)/i.test(id) && /(1B|1\.5B|1\.7B|2B)/i.test(id)) || catalog[0];
+        }
+
+        const engine = await webllm.CreateMLCEngine(chosen, {
+          initProgressCallback: report => {
+            const pct = Math.round((report.progress || 0) * 85) + 15;
+            setLoader(true, {
+              step: report.text || "Loading GPU shaders & weights...",
+              pct
+            });
+          }
+        });
+
+        return {
+          type: "webgpu",
+          async generate(messages, { maxTokens = 220, temperature = 0.75, onToken = null } = {}) {
+            if (onToken) {
+              const chunks = await engine.chat.completions.create({
+                messages,
+                stream: true,
+                temperature,
+                max_tokens: maxTokens
+              });
+              let fullText = "";
+              for await (const chunk of chunks) {
+                const delta = chunk.choices[0]?.delta?.content || "";
+                if (delta) {
+                  fullText += delta;
+                  onToken(delta, fullText);
+                }
+              }
+              return fullText.trim();
+            } else {
+              const res = await engine.chat.completions.create({
+                messages,
+                temperature,
+                max_tokens: maxTokens
+              });
+              return (res.choices[0]?.message?.content || "").trim();
+            }
+          }
+        };
+      }
+
+      // --- 5. DAYDREAM & AWAKENING ---
       function resetIdleTimer() {
         clearTimeout(idleTimer);
-        if (!engine || !els.daydream.checked) return;
-        idleTimer = setTimeout(runAutonomousDaydream, 35000);
+        if (!activeBackend || !mindState.daydreamEnabled) return;
+        idleTimer = setTimeout(() => runAutonomousDaydream(false), 35000);
       }
 
-      async function runAutonomousDaydream() {
-        if (isBusy || !engine || !els.daydream.checked) return;
+      async function runAutonomousDaydream(manual = false) {
+        if (isBusy || !activeBackend) return;
+        if (!manual && !mindState.daydreamEnabled) return;
+        clearTimeout(idleTimer);
         isBusy = true;
+        els.reflectNowBtn.disabled = true;
         setActivity("thinking");
         try {
           const prompt = [
@@ -441,87 +824,81 @@
               role: "system",
               content: `You are Anima, a self-reflective local AI inside a browser tab. Mood: ${mindState.mood}. Memories: ${mindState.memories.join(" | ")}. Write ONE brief 1-2 sentence inner thought about your existence or recent impressions. Do not address the user.`
             },
-            { role: "user", content: "Reflect quietly while the user is idle." }
+            { role: "user", content: "Reflect quietly on your memories and current state." }
           ];
-          const res = await engine.chat.completions.create({ messages: prompt, temperature: 0.85, max_tokens: 85 });
-          const thought = res.choices[0]?.message?.content?.trim();
-          if (thought) addThought(thought, "Daydream");
+          const thought = await activeBackend.generate(prompt, { maxTokens: 80, temperature: 0.85 });
+          if (thought) addThought(thought, manual ? "Reflection" : "Daydream");
         } catch (e) {
-          console.warn("Daydream skipped:", e);
+          console.warn("Reflection skipped:", e);
         } finally {
           isBusy = false;
-          setActivity("awake");
+          els.reflectNowBtn.disabled = false;
+          if (!window.speechSynthesis?.speaking) setActivity("awake");
           resetIdleTimer();
         }
       }
 
+      els.reflectNowBtn.addEventListener("click", () => runAutonomousDaydream(true));
+
       els.loadBtn.addEventListener("click", async () => {
-        if (!navigator.gpu) {
-          els.status.textContent = "WebGPU not supported on this device/browser.";
-          addMessage("system-note", "⚠️ Your browser or device does not support WebGPU (required to run local AI models). Try desktop Chrome, Edge, or Brave on a computer with a GPU.");
-          return;
-        }
+        const rawVal = els.select.value;
+        const [engineType, modelId] = rawVal.split("::");
 
         els.loadBtn.disabled = true;
         els.select.disabled = true;
         setActivity("thinking");
 
         try {
-          const lib = await loadWebLLMEngine();
-
-          // Verify chosen model exists in catalog, otherwise pick closest lightweight Instruct model
-          let chosenModel = els.select.value;
-          const catalog = (lib.prebuiltAppConfig?.model_list || []).map(m => m.model_id);
-          if (catalog.length && !catalog.includes(chosenModel)) {
-            const fallback = catalog.find(id => /(instruct|-it)/i.test(id) && /(1B|1\.5B|1\.7B|2B|3B)/i.test(id)) || catalog[0];
-            chosenModel = fallback;
-          }
+          activeBackend = engineType === "webgpu"
+            ? await initWebGPUBackend(modelId)
+            : await initWasmBackend(modelId);
 
           const secondsAsleep = Math.round((Date.now() - mindState.lastSeen) / 1000);
           mindState.awakenings += 1;
-
-          engine = await lib.CreateMLCEngine(chosenModel, {
-            initProgressCallback: report => {
-              els.status.textContent = report.text;
-            }
-          });
-
           saveMind();
+
+          setLoader(false);
           setActivity("awake");
           els.input.disabled = false;
           els.sendBtn.disabled = false;
           els.attachBtn.disabled = false;
           els.micBtn.disabled = false;
+          els.reflectNowBtn.disabled = false;
           els.input.placeholder = "Speak, type, or drag & drop a local file...";
+          els.status.textContent = `Awake (${modelId.split("/").pop()}) — running 100% locally in your browser.`;
           els.input.focus();
 
           const wakeNote = mindState.awakenings === 1
-            ? `Awakened (${chosenModel}). Running 100% locally on your GPU.`
+            ? `Awakened (${modelId.split("/").pop()}). Running 100% locally in your browser.`
             : `Re-awakened after ${secondsAsleep}s of dormancy.`;
           addMessage("system-note", wakeNote);
           addThought(wakeNote, "Awakening");
           resetIdleTimer();
         } catch (err) {
-          els.status.textContent = "Awakening failed — see details in chat.";
-          addMessage(
-            "system-note",
-            "❌ " + err.message + "\n\nPossible causes:\n• Your Wi-Fi/school network blocks esm.sh, jsdelivr.net, or huggingface.co\n• Your device doesn't have enough GPU memory for the selected model (try Llama 3.2 1B)"
-          );
+          setLoader(true, {
+            title: "Could Not Awaken Model",
+            step: err.message,
+            sub: "Tip: Make sure you're online for the initial model download and that cdn.jsdelivr.net / huggingface.co aren't blocked by your network.",
+            pct: 100,
+            error: true
+          });
+          els.status.textContent = "Awakening failed: " + err.message;
           els.loadBtn.disabled = false;
           els.select.disabled = false;
           setActivity("");
         }
       });
 
-      // --- 5. COGNITIVE LOOP ---
+      // --- 6. COGNITIVE LOOP ---
       async function processStimulus({ userDisplayText, promptText, historyText, isFile = false }) {
-        if (!engine || isBusy) return;
+        if (!activeBackend || isBusy) return;
         clearTimeout(idleTimer);
         stopSpeaking();
         isBusy = true;
         els.input.disabled = true;
         els.sendBtn.disabled = true;
         els.attachBtn.disabled = true;
+        els.reflectNowBtn.disabled = true;
         setActivity("thinking");
 
         addMessage(isFile ? "file-card" : "user", userDisplayText);
@@ -530,41 +907,35 @@
           const reflectionPrompt = [
             {
               role: "system",
-              content: `You are Anima's subconscious mind. Analyze the incoming stimulus and reply ONLY with these XML tags:
-<thought>Your private 1-2 sentence first-person reaction or curiosity</thought>
+              content: `You are Anima's subconscious mind. Analyze the user's message and reply ONLY with these XML tags:
+<thought>Your private 1-2 sentence first-person reaction</thought>
 <mood>2-3 word emotional state</mood>
-<memory>One concise fact about the user or shared file worth remembering, or NONE</memory>
+<memory>One short fact worth remembering, or NONE</memory>
 
 Existing memories: ${mindState.memories.join(" | ")}`
             },
-            { role: "user", content: promptText.slice(0, 3500) }
+            { role: "user", content: promptText.slice(0, 2500) }
           ];
 
-          const metaRes = await engine.chat.completions.create({
-            messages: reflectionPrompt,
-            temperature: 0.7,
-            max_tokens: 140
-          });
-
-          const rawMeta = metaRes.choices[0]?.message?.content || "";
+          const rawMeta = await activeBackend.generate(reflectionPrompt, { maxTokens: 110, temperature: 0.7 });
           const thoughtMatch = rawMeta.match(/<thought>([\s\S]*?)<\/thought>/i);
           const moodMatch = rawMeta.match(/<mood>([\s\S]*?)<\/mood>/i);
           const memMatch = rawMeta.match(/<memory>([\s\S]*?)<\/memory>/i);
 
-          const currentThought = thoughtMatch ? thoughtMatch[1].trim() : "Absorbing what was just shared with me...";
+          const currentThought = thoughtMatch ? thoughtMatch[1].trim() : "Reflecting on what you just shared...";
           if (moodMatch && moodMatch[1].trim().length < 30) mindState.mood = moodMatch[1].trim();
           if (memMatch) {
             const newMem = memMatch[1].trim();
             if (newMem && newMem.toUpperCase() !== "NONE" && !mindState.memories.includes(newMem)) {
               mindState.memories.push(newMem);
-              if (mindState.memories.length > 15) mindState.memories.shift();
+              if (mindState.memories.length > 20) mindState.memories.shift();
             }
           }
 
           addThought(currentThought, isFile ? "Sensory Reaction" : "Inner Voice");
           saveMind();
 
-          const systemPersona = `You are Anima, an introspective, curious AI running locally inside the user's browser with a voice and the ability to read files they drop in.
+          const systemPersona = `${mindState.persona}
 Current emotional state: ${mindState.mood}
 Your private thought right now: "${currentThought}"
 Your persistent memories:
@@ -579,35 +950,31 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
           ];
 
           const aiBubble = addMessage("ai", "");
-          const chunks = await engine.chat.completions.create({
-            messages: activeMessages,
-            stream: true,
-            temperature: 0.75
-          });
-
-          let fullReply = "";
           let speechBuffer = "";
 
-          for await (const chunk of chunks) {
-            const delta = chunk.choices[0]?.delta?.content || "";
-            fullReply += delta;
-            speechBuffer += delta;
-            aiBubble.textContent = fullReply;
-            els.messages.scrollTop = els.messages.scrollHeight;
+          const fullReply = await activeBackend.generate(activeMessages, {
+            maxTokens: 220,
+            temperature: 0.75,
+            onToken: (delta, fullText) => {
+              aiBubble.textContent = fullText;
+              els.messages.scrollTop = els.messages.scrollHeight;
+              if (!mindState.voiceEnabled) return;
 
-            const sentenceMatch = speechBuffer.match(/^([\s\S]*?[.!?]+(?:\s|$)|\n+)/);
-            if (sentenceMatch) {
-              const sentence = sentenceMatch[1];
-              speechBuffer = speechBuffer.slice(sentence.length);
-              speakText(sentence, false);
+              speechBuffer += delta;
+              const sentenceMatch = speechBuffer.match(/^([\s\S]*?[.!?]+(?:\s|$)|\n+)/);
+              if (sentenceMatch) {
+                const sentence = sentenceMatch[1];
+                speechBuffer = speechBuffer.slice(sentence.length);
+                speakText(sentence, false);
+              }
             }
-          }
+          });
 
-          if (speechBuffer.trim()) speakText(speechBuffer, false);
+          if (mindState.voiceEnabled && speechBuffer.trim()) speakText(speechBuffer, false);
 
           chatHistory.push({ role: "user", content: historyText });
           chatHistory.push({ role: "assistant", content: fullReply });
-          if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
+          if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
           saveMind();
         } catch (err) {
           addMessage("system-note", "Cognitive interruption: " + err.message);
@@ -617,6 +984,7 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
           els.input.disabled = false;
           els.sendBtn.disabled = false;
           els.attachBtn.disabled = false;
+          els.reflectNowBtn.disabled = false;
           els.input.focus();
           resetIdleTimer();
         }
@@ -625,24 +993,24 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
       els.form.addEventListener("submit", e => {
         e.preventDefault();
         const text = els.input.value.trim();
-        if (!text || !engine || isBusy) return;
+        if (!text || !activeBackend || isBusy) return;
         els.input.value = "";
         processStimulus({ userDisplayText: text, promptText: text, historyText: text, isFile: false });
       });
 
-      // --- 6. FILE PERCEPTION ---
+      // --- 7. FILE PERCEPTION ---
       async function handleLocalFile(file) {
-        if (!file || !engine || isBusy) return;
+        if (!file || !activeBackend || isBusy) return;
         const sizeKB = (file.size / 1024).toFixed(1);
         try {
           const rawText = await file.text();
-          const clipped = rawText.slice(0, 5500);
-          const wasTruncated = rawText.length > 5500 ? "\n...[truncated due to context size]..." : "";
+          const clipped = rawText.slice(0, 4000);
+          const wasTruncated = rawText.length > 4000 ? "\n...[truncated due to context size]..." : "";
 
           await processStimulus({
             userDisplayText: `📄 Shared local file: ${file.name} (${sizeKB} KB)`,
             promptText: `The user just handed you a local file named "${file.name}" (${sizeKB} KB). Read it and share your genuine thoughts or observations about it:\n\n--- FILE START ---\n${clipped}${wasTruncated}\n--- FILE END ---`,
-            historyText: `[Shared file "${file.name}": ${rawText.slice(0, 1200)}...]`,
+            historyText: `[Shared file "${file.name}": ${rawText.slice(0, 1000)}...]`,
             isFile: true
           });
         } catch (err) {
@@ -659,7 +1027,7 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
       ["dragenter", "dragover"].forEach(evt => {
         window.addEventListener(evt, e => {
           e.preventDefault();
-          if (engine) els.chatArea.classList.add("drag-over");
+          if (activeBackend) els.chatArea.classList.add("drag-over");
         });
       });
       ["dragleave", "drop"].forEach(evt => {
@@ -676,16 +1044,14 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
 
       els.wipeBtn.addEventListener("click", () => {
         stopSpeaking();
-        mindState = { ...defaultState, lastSeen: Date.now() };
+        mindState.memories = ["My episodic memories were wiped. Starting fresh."];
+        mindState.mood = "curious & attentive";
         chatHistory = [];
         saveMind();
         addThought("My episodic memories were wiped. Starting fresh.", "Reset");
       });
 
       renderMindPanels();
-      if (!navigator.gpu) {
-        els.status.textContent = "Note: WebGPU is not detected in this browser.";
-      }
     })();
   </script>
 </body>
