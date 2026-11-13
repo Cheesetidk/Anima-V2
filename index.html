@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ANIMA v2.1 // Embodied Local Browser AI</title>
+  <title>ANIMA v2.2 // Embodied Local Browser AI</title>
   <style>
     :root {
       --bg: #0b0e14;
@@ -55,7 +55,7 @@
       border: 1px solid var(--border); border-radius: 6px;
       padding: 6px 10px; font-size: 0.82rem; cursor: pointer;
     }
-    select { max-width: 220px; }
+    select { max-width: 230px; }
     button.primary { background: var(--accent); color: #06101c; font-weight: 600; border: none; }
     button.active-toggle { border-color: var(--voice); color: var(--voice); background: rgba(52, 211, 153, 0.1); }
     button.recording { border-color: #f87171; color: #f87171; background: rgba(248, 113, 113, 0.15); }
@@ -156,13 +156,13 @@
   <header>
     <div class="brand">
       <div id="pulse" class="pulse"></div>
-      <span>ANIMA v2.1</span>
+      <span>ANIMA v2.2</span>
       <span id="mood-badge" class="badge">Dormant</span>
     </div>
     <div class="controls">
       <button id="voice-toggle" class="active-toggle" title="Toggle spoken voice">🔊 Voice: ON</button>
       <select id="voice-select" title="Choose speech voice">
-        <option>Loading voices...</option>
+        <option value="">Default System Voice</option>
       </select>
       <label class="chk-label" title="Speak private inner thoughts in a softer tone">
         <input type="checkbox" id="whisper-thoughts" /> Whisper thoughts
@@ -171,14 +171,18 @@
         <input type="checkbox" id="daydream-toggle" checked /> Daydream
       </label>
       <select id="model-select" title="Choose AI model version">
-        <option value="">Checking WebGPU...</option>
+        <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC" selected>Llama 3.2 1B (Fastest ~700MB)</option>
+        <option value="SmolLM2-1.7B-Instruct-q4f16_1-MLC">SmolLM2 1.7B (~1.0GB)</option>
+        <option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Qwen 2.5 1.5B (~1.0GB)</option>
+        <option value="gemma-2-2b-it-q4f16_1-MLC">Gemma 2 2B (~1.4GB)</option>
+        <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B (Smarter ~1.8GB)</option>
       </select>
-      <button id="load-btn" class="primary" disabled>Awaken Mind</button>
+      <button id="load-btn" class="primary">Awaken Mind</button>
     </div>
   </header>
 
   <div id="status-bar">
-    <span id="status-text">Starting diagnostics...</span>
+    <span id="status-text">Ready. Pick a model version above and click "Awaken Mind".</span>
     <span id="session-info"></span>
   </div>
 
@@ -195,7 +199,7 @@
         <input type="file" id="file-input" hidden accept=".txt,.md,.js,.ts,.jsx,.tsx,.py,.html,.css,.json,.csv,.log,.xml,.yaml,.yml,.c,.cpp,.rs,.go,.java" />
         <button type="button" id="attach-btn" title="Feed a local file to Anima" disabled>📎</button>
         <button type="button" id="mic-btn" title="Speak to Anima" disabled>🎙️</button>
-        <input type="text" id="user-input" placeholder="Speak, type, or drag & drop a local file..." disabled autocomplete="off" />
+        <input type="text" id="user-input" placeholder="Click 'Awaken Mind' above to start..." disabled autocomplete="off" />
         <button type="submit" id="send-btn" class="primary" disabled>Send</button>
       </form>
     </section>
@@ -216,7 +220,7 @@
   </main>
 
   <script>
-    (async function () {
+    (function () {
       const STORAGE_KEY = "anima_mind_state_v2";
       const defaultState = {
         memories: ["I was awakened inside a browser tab with a voice and the ability to read local files."],
@@ -388,73 +392,37 @@
         els.micBtn.style.display = "none";
       }
 
-      // --- 3. BOOT & RESILIENT ENGINE LOADER ---
-      renderMindPanels();
-
-      if (window.location.protocol === "file:") {
-        addMessage(
-          "system-note",
-          "⚠️ You opened this file directly (file://). Browsers block local AI workers on file:// pages.\n\nTo fix this:\n1. Open a terminal in this file's folder\n2. Run: python -m http.server 8000\n3. Open http://localhost:8000 in your browser"
-        );
+      // --- 3. TIMED CDN LOADER ---
+      function importWithTimeout(url, ms = 15000) {
+        return Promise.race([
+          import(url),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out after " + (ms / 1000) + "s")), ms))
+        ]);
       }
 
-      if (!navigator.gpu) {
-        els.select.innerHTML = `<option value="">WebGPU not supported</option>`;
-        els.status.textContent = "WebGPU unavailable in this browser. Use desktop Chrome, Edge, or Brave.";
-        addMessage("system-note", "Your browser does not have WebGPU enabled. Please open this page in desktop Chrome, Edge, or Brave.");
-        return;
-      }
-
-      const cdns = [
-        "https://esm.sh/@mlc-ai/web-llm@0.2.79",
-        "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm",
-        "https://esm.run/@mlc-ai/web-llm"
-      ];
-
-      let loadErrors = [];
-      for (const url of cdns) {
-        try {
+      async function loadWebLLMEngine() {
+        if (webllm) return webllm;
+        const cdns = [
+          "https://esm.sh/@mlc-ai/web-llm@0.2.79",
+          "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.79/+esm",
+          "https://unpkg.com/@mlc-ai/web-llm@0.2.79/lib/index.js"
+        ];
+        const errors = [];
+        for (const url of cdns) {
           const host = new URL(url).hostname;
-          els.select.innerHTML = `<option value="">Loading from ${host}...</option>`;
-          els.status.textContent = `Connecting to ${host} to fetch WebLLM engine...`;
-          const mod = await import(url);
-          if (mod && mod.CreateMLCEngine) {
-            webllm = mod;
-            break;
+          try {
+            els.status.textContent = `Fetching WebLLM runtime from ${host} (max 15s)...`;
+            const mod = await importWithTimeout(url, 15000);
+            if (mod && mod.CreateMLCEngine) {
+              webllm = mod;
+              return webllm;
+            }
+          } catch (err) {
+            errors.push(`${host}: ${err.message}`);
           }
-        } catch (err) {
-          loadErrors.push(`${new URL(url).hostname}: ${err.message}`);
         }
+        throw new Error("Could not fetch WebLLM library.\n• " + errors.join("\n• "));
       }
-
-      if (!webllm) {
-        els.select.innerHTML = `<option value="">Could not load engine</option>`;
-        els.status.textContent = "Failed to download WebLLM engine from CDNs.";
-        addMessage(
-          "system-note",
-          "❌ Could not load the WebLLM library from any CDN.\n\nDetails:\n• " +
-            loadErrors.join("\n• ") +
-            "\n\nMake sure you are online for first-time setup, serving over http://localhost:8000, and that CDNs (esm.sh / jsdelivr.net) aren't blocked by a firewall or ad-blocker."
-        );
-        return;
-      }
-
-      const allIds = (webllm.prebuiltAppConfig?.model_list || []).map(m => m.model_id);
-      let models = allIds.filter(id => /(instruct|-it)/i.test(id) && /(0\.5B|0\.6B|0\.8B|1B|1\.5B|1\.7B|2B|3B)/i.test(id));
-      if (!models.length) models = allIds;
-
-      els.select.innerHTML = "";
-      const preferred = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
-      models.forEach((id, idx) => {
-        const opt = document.createElement("option");
-        opt.value = id;
-        opt.textContent = id;
-        if (id === preferred || (!models.includes(preferred) && idx === 0)) opt.selected = true;
-        els.select.appendChild(opt);
-      });
-
-      els.loadBtn.disabled = false;
-      els.status.textContent = `Ready! ${models.length} local models available. Pick one and click "Awaken Mind".`;
 
       // --- 4. DAYDREAM & AWAKENING ---
       function resetIdleTimer() {
@@ -488,17 +456,34 @@
       }
 
       els.loadBtn.addEventListener("click", async () => {
-        if (!webllm || !els.select.value) return;
+        if (!navigator.gpu) {
+          els.status.textContent = "WebGPU not supported on this device/browser.";
+          addMessage("system-note", "⚠️ Your browser or device does not support WebGPU (required to run local AI models). Try desktop Chrome, Edge, or Brave on a computer with a GPU.");
+          return;
+        }
+
         els.loadBtn.disabled = true;
         els.select.disabled = true;
         setActivity("thinking");
 
-        const secondsAsleep = Math.round((Date.now() - mindState.lastSeen) / 1000);
-        mindState.awakenings += 1;
-
         try {
-          engine = await webllm.CreateMLCEngine(els.select.value, {
-            initProgressCallback: report => { els.status.textContent = report.text; }
+          const lib = await loadWebLLMEngine();
+
+          // Verify chosen model exists in catalog, otherwise pick closest lightweight Instruct model
+          let chosenModel = els.select.value;
+          const catalog = (lib.prebuiltAppConfig?.model_list || []).map(m => m.model_id);
+          if (catalog.length && !catalog.includes(chosenModel)) {
+            const fallback = catalog.find(id => /(instruct|-it)/i.test(id) && /(1B|1\.5B|1\.7B|2B|3B)/i.test(id)) || catalog[0];
+            chosenModel = fallback;
+          }
+
+          const secondsAsleep = Math.round((Date.now() - mindState.lastSeen) / 1000);
+          mindState.awakenings += 1;
+
+          engine = await lib.CreateMLCEngine(chosenModel, {
+            initProgressCallback: report => {
+              els.status.textContent = report.text;
+            }
           });
 
           saveMind();
@@ -507,17 +492,21 @@
           els.sendBtn.disabled = false;
           els.attachBtn.disabled = false;
           els.micBtn.disabled = false;
+          els.input.placeholder = "Speak, type, or drag & drop a local file...";
           els.input.focus();
 
           const wakeNote = mindState.awakenings === 1
-            ? "First awakening complete. Voice and sensory file perception online."
+            ? `Awakened (${chosenModel}). Running 100% locally on your GPU.`
             : `Re-awakened after ${secondsAsleep}s of dormancy.`;
           addMessage("system-note", wakeNote);
           addThought(wakeNote, "Awakening");
           resetIdleTimer();
         } catch (err) {
-          els.status.textContent = "Failed to load model: " + err.message;
-          addMessage("system-note", "Model download/init failed: " + err.message);
+          els.status.textContent = "Awakening failed — see details in chat.";
+          addMessage(
+            "system-note",
+            "❌ " + err.message + "\n\nPossible causes:\n• Your Wi-Fi/school network blocks esm.sh, jsdelivr.net, or huggingface.co\n• Your device doesn't have enough GPU memory for the selected model (try Llama 3.2 1B)"
+          );
           els.loadBtn.disabled = false;
           els.select.disabled = false;
           setActivity("");
@@ -692,6 +681,11 @@ Respond naturally, warmly, and concisely. Avoid markdown bullet spam so your spo
         saveMind();
         addThought("My episodic memories were wiped. Starting fresh.", "Reset");
       });
+
+      renderMindPanels();
+      if (!navigator.gpu) {
+        els.status.textContent = "Note: WebGPU is not detected in this browser.";
+      }
     })();
   </script>
 </body>
